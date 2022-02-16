@@ -1,12 +1,22 @@
 package org.mockserver.mock;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.zhoubh.core.util.JsonConvertUtil;
+import com.zhoubh.core.util.ObjectConvertUtil;
+import com.zhoubh.mock.manager.MockBaseManager;
+import com.zhoubh.mock.manager.MockHandlerManager;
+import com.zhoubh.mock.manager.MockRedisManager;
+import com.zhoubh.mock.model.ExternalExpectation;
+import com.zhoubh.mock.model.ExternalKeyMatchStyle;
+import com.zhoubh.mock.model.UpdateAction;
+import org.apache.commons.lang3.StringUtils;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.memory.MemoryMonitoring;
+import org.mockserver.mock.listeners.MockServerMatcherNotifier;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier.Cause;
 import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
@@ -16,16 +26,15 @@ import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.*;
 import org.mockserver.serialization.java.ExpectationToJavaSerializer;
+import org.mockserver.serialization.model.ExpectationDTO;
+import org.mockserver.serialization.model.HttpRequestDTO;
 import org.mockserver.server.initialize.ExpectationInitializerLoader;
 import org.mockserver.uuid.UUIDService;
 import org.mockserver.verify.Verification;
 import org.mockserver.verify.VerificationSequence;
 import org.slf4j.event.Level;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -120,6 +129,10 @@ public class HttpState {
         }
         this.memoryMonitoring = new MemoryMonitoring(this.mockServerLog, this.requestMatchers);
         new ExpectationInitializerLoader(mockServerLogger, requestMatchers);
+
+        /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+        initExpectationFromCache();
+        /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
     }
 
     public MockServerLogger getMockServerLogger() {
@@ -242,13 +255,136 @@ public class HttpState {
         return upsertedExpectations;
     }
 
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+    /**
+     * 1、根据remoteHost模糊匹配这个项目下的全部规则
+     * 2、处理keyMatchStyle
+     * 3、装载规则到requestMatchers中
+     */
+    private void initExpectationFromCache() {
+        Map<String, Map<String, String>> allMockRuleMap = MockRedisManager.getMockRuleMapFromRemoteHost();
+        if (allMockRuleMap.isEmpty()) {
+            return;
+        }
+        Map<String, Map<String, String>> allMockExternalMap = MockRedisManager.getMockExternalFromRemoteHost();
+
+        Map<String, Expectation> expectationMap = new HashMap<>(allMockRuleMap.size());
+        for (Map.Entry<String, Map<String, String>> stringMapEntry : allMockRuleMap.entrySet()) {
+            String mockMatchKey = MockBaseManager.getMockExternalKey(MockBaseManager.getUserIdFromMockKey(stringMapEntry.getKey()));
+            Map<String, String> mockExternalMap = allMockExternalMap.get(mockMatchKey);
+
+            for (Map.Entry<String, String> stringStringEntry : stringMapEntry.getValue().entrySet()) {
+                Expectation expectation = getExpectationSerializer().deserialize(stringStringEntry.getValue());
+                if (Objects.nonNull(mockExternalMap) && mockExternalMap.containsKey(stringStringEntry.getKey())) {
+                    expectation = processExpectation(expectation, mockExternalMap.get(stringStringEntry.getKey()));
+                }
+                expectationMap.put(stringStringEntry.getKey(), expectation);
+            }
+        }
+
+        requestMatchers.reset();
+        expectationMap.entrySet().stream().
+            sorted(Comparator.comparingInt(e -> Integer.parseInt(e.getKey()))).
+            forEach(e -> requestMatchers.add(e.getValue(), MockServerMatcherNotifier.Cause.API));
+    }
+
+    /**
+     * 根据userId查询MOCK.UPDATE的key,有数据则表示在这个请求之前用户有更新了规则,需要将这些规则和requestMatchers中做同步
+     * @param request
+     */
+    private void updateExpectationFromCache(HttpRequest request) {
+        String userId = MockHandlerManager.getUserId(JsonConvertUtil.toJson(request));
+        Map<String, String> mockUpdateMap = MockRedisManager.getMockUpdateFromUserId(userId);
+        if (mockUpdateMap.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> stringStringEntry : mockUpdateMap.entrySet()) {
+            switch (UpdateAction.valueOf(stringStringEntry.getValue())) {
+                case INSERT:
+                case UPDATE:
+                    String mockRule = MockRedisManager.getMockRuleWithId(userId, stringStringEntry.getKey());
+                    if (Objects.nonNull(mockRule)) {
+                        String externalExpectationString = MockRedisManager.getMockExternalWithId(userId,
+                            stringStringEntry.getKey());
+                        Expectation expectation = getExpectationSerializer().deserialize(mockRule);
+                        requestMatchers.add(processExpectation(expectation, externalExpectationString), Cause.API);
+                    }
+                    break;
+                case DELETE:
+                    String expectationId = MockBaseManager.getExpectationId(stringStringEntry.getKey(), userId);
+                    requestMatchers.removeExpectationWithId(expectationId);
+                    break;
+            }
+
+        }
+        MockRedisManager.removeMockUpdateKey(userId);
+    }
+
+    /**
+     * 对规则进行额外处理
+     * @param expectation
+     * @param externalExpectationString
+     * @return
+     */
+    private Expectation processExpectation(Expectation expectation, String externalExpectationString) {
+        if (Objects.isNull(expectation) || Objects.isNull(expectation.getHttpRequest())
+            || !(expectation.getHttpRequest() instanceof HttpRequest)
+            || StringUtils.isBlank(externalExpectationString)) {
+            return expectation;
+        }
+
+        ExternalExpectation externalExpectation = JsonConvertUtil.toObject(externalExpectationString,
+            ExternalExpectation.class);
+        if (externalExpectation.hasExternal()) {
+            ExpectationDTO expectationDTO = new ExpectationDTO(expectation);
+            HttpRequestDTO httpRequestDTO = ObjectConvertUtil.convert(expectationDTO.getHttpRequest(),
+                HttpRequestDTO.class);
+
+            if (externalExpectation.hasKeyMatchStyle()) {
+                processKeyMatchStyle(httpRequestDTO, externalExpectation.getKeyMatchStyle());
+            }
+            return expectationDTO.buildObject();
+        }
+        return expectation;
+    }
+
+    /**
+     * 处理queryStringParameters、pathParameters、headers中的keyMatchStyle
+     * @param httpRequestDTO
+     * @param keyMatchStyle
+     * @return
+     */
+    private void processKeyMatchStyle(HttpRequestDTO httpRequestDTO, ExternalKeyMatchStyle keyMatchStyle) {
+        Parameters queryStringParameters = httpRequestDTO.getQueryStringParameters();
+        if (Objects.nonNull(queryStringParameters) && keyMatchStyle.getQueryStringParameters()) {
+            queryStringParameters.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
+        }
+        Parameters pathParameters = httpRequestDTO.getPathParameters();
+        if (Objects.nonNull(pathParameters) && keyMatchStyle.getPathParameters()) {
+            pathParameters.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
+        }
+        Headers headers = httpRequestDTO.getHeaders();
+        if (Objects.nonNull(headers) && keyMatchStyle.getHeaders()) {
+            headers.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
+        }
+    }
+
+    /**
+     * 先根据userId查询,更新规则,然后再走匹配规则的逻辑
+     * @param request
+     * @return
+     */
     public Expectation firstMatchingExpectation(HttpRequest request) {
+        updateExpectationFromCache(request);
+
         if (requestMatchers.isEmpty()) {
             return null;
         } else {
             return requestMatchers.firstMatchingExpectation(request);
         }
     }
+
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
 
     @VisibleForTesting
     public List<Expectation> allMatchingExpectation(HttpRequest request) {

@@ -17,6 +17,10 @@ import static org.slf4j.event.Level.TRACE;
 public class MatchDifference {
 
     public enum Field {
+        /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+        USER("user"),
+        /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
         METHOD("method"),
         PATH("path"),
         PATH_PARAMETERS("pathParameters"),

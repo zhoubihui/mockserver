@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.base.Joiner;
+import com.zhoubh.core.util.JsonConvertUtil;
+import com.zhoubh.mock.manager.MockHandlerManager;
 import org.apache.commons.lang3.StringUtils;
 import org.mockserver.codec.ExpandedParameterDecoder;
 import org.mockserver.codec.JsonSchemaBodyDecoder;
@@ -58,6 +60,22 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     private JsonSchemaBodyDecoder jsonSchemaBodyParser;
     private MatcherBuilder matcherBuilder;
 
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+    private RegexStringMatcher userMatcher = null;
+
+    /**
+     * id的结构是: id.userId
+     * @param id
+     */
+    private void withUser(String id) {
+        String[] ids = id.split("\\.");
+        if (ids.length < 2) {
+            return;
+        }
+        this.userMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(ids[1]), controlPlaneMatcher);
+    }
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
     public HttpRequestPropertiesMatcher(MockServerLogger mockServerLogger) {
         super(mockServerLogger);
         expandedParameterDecoder = new ExpandedParameterDecoder(mockServerLogger);
@@ -80,6 +98,9 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             this.httpRequest = httpRequest;
             this.httpRequests = Collections.singletonList(this.httpRequest);
             if (httpRequest != null) {
+                /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+                withUser(expectation.getId());
+                /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
                 withMethod(httpRequest.getMethod());
                 withPath(httpRequest);
                 withPathParameters(httpRequest.getPathParameters());
@@ -259,6 +280,15 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
             } else {
                 MatchDifferenceCount matchDifferenceCount = new MatchDifferenceCount(request);
                 if (request != null) {
+
+                    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+                    final String userId = MockHandlerManager.getUserId(JsonConvertUtil.toJson(request));
+                    boolean userMatches = matches(USER, context, userMatcher, NottableString.string(userId));
+                    if (failFast(userMatcher, context, matchDifferenceCount, becauseBuilder, userMatches, USER)) {
+                        return false;
+                    }
+                    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
                     boolean methodMatches = StringUtils.isBlank(request.getMethod().getValue()) || matches(METHOD, context, methodMatcher, request.getMethod());
                     if (failFast(methodMatcher, context, matchDifferenceCount, becauseBuilder, methodMatches, METHOD)) {
                         return false;

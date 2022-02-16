@@ -99,6 +99,23 @@ public class RequestMatchers extends MockServerMatcherNotifier {
         return upsertedExpectation;
     }
 
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
+    /**
+     * 根据expectationId移除规则
+     * @param expectationId
+     * @return
+     */
+    public void removeExpectationWithId(String expectationId) {
+        if (Objects.nonNull(expectationId)) {
+            httpRequestMatchers.getByKey(expectationId).
+                ifPresent(httpRequestMatcher -> scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher,
+                    UUIDService.getUUID())));
+        }
+    }
+
+    /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
     public void update(Expectation[] expectations, Cause cause) {
         AtomicInteger numberOfChanges = new AtomicInteger(0);
         if (expectations != null) {

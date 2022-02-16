@@ -15,6 +15,14 @@
     <url>https://www.mock-server.com</url>
 
     <dependencies>
+        <!-- mockserver-plus源码改动 zhoubh -->
+        <!--mockserver-plus系列-->
+        <dependency>
+            <groupId>com.zhoubh</groupId>
+            <artifactId>mockserver-plus-core</artifactId>
+        </dependency>
+        <!-- mockserver-plus源码改动 zhoubh -->
+
         <!-- mockserver -->
         <dependency>
             <groupId>${project.groupId}</groupId>
