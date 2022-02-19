@@ -1,5 +1,7 @@
 package org.mockserver.mock.action.http;
 
+import com.zhoubh.core.util.ObjectConvertUtil;
+import com.zhoubh.mock.manager.MockHandlerManager;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.mock.action.ExpectationResponseCallback;
@@ -10,6 +12,7 @@ import org.slf4j.event.Level;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Objects;
 
 import static org.mockserver.model.HttpResponse.notFoundResponse;
 
@@ -49,6 +52,18 @@ public class HttpResponseClassCallbackActionHandler {
                     .setMessageFormat("ClassNotFoundException - while trying to instantiate ExpectationResponseCallback class \"" + httpClassCallback.getCallbackClass() + "\"")
                     .setThrowable(e)
             );
+
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+            /**
+             * 只有这个异常才将classCallback认为是脚本代码
+             */
+            Object object = MockHandlerManager.getGroovyResponseCallback(httpClassCallback.getCallbackClass());
+            if (Objects.isNull(object)) {
+                return null;
+            }
+            return ObjectConvertUtil.convert(object, ExpectationResponseCallback.class);
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
         } catch (NoSuchMethodException e) {
             mockServerLogger.logEvent(
                 new LogEntry()
