@@ -1,5 +1,7 @@
 package org.mockserver.mock.action.http;
 
+import com.zhoubh.core.util.ObjectConvertUtil;
+import com.zhoubh.mock.manager.MockHandlerManager;
 import org.mockserver.httpclient.NettyHttpClient;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
@@ -12,6 +14,7 @@ import org.slf4j.event.Level;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Objects;
 
 /**
  * @author jamesdbloom
@@ -48,6 +51,20 @@ public class HttpForwardClassCallbackActionHandler extends HttpForwardAction {
                     .setMessageFormat("ClassNotFoundException - while trying to instantiate " + callbackClass.getSimpleName() + " class \"" + httpClassCallback.getCallbackClass() + "\"")
                     .setThrowable(e)
             );
+
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+            /**
+             * 只有这个异常才将classCallback认为是脚本代码,目前只支持ExpectationForwardCallback
+             */
+            if (callbackClass.isAssignableFrom(ExpectationForwardCallback.class)) {
+                Object object = MockHandlerManager.getGroovyForwardCallback(httpClassCallback.getCallbackClass());
+                if (Objects.isNull(object)) {
+                    return null;
+                }
+                return ObjectConvertUtil.convert(object, callbackClass);
+            }
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+
         } catch (NoSuchMethodException e) {
             mockServerLogger.logEvent(
                 new LogEntry()
