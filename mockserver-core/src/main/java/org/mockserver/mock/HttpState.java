@@ -262,34 +262,25 @@ public class HttpState {
      * 3、装载规则到requestMatchers中
      */
     private void initExpectationFromCache() {
-        Map<String, Map<String, String>> allMockRuleMap = MockRedisManager.getMockRuleMapFromRemoteHost();
+        Map<String, String> allMockRuleMap = MockRedisManager.getMockRuleMap();
         if (allMockRuleMap.isEmpty()) {
             return;
         }
-        Map<String, Map<String, String>> allMockExternalMap = MockRedisManager.getMockExternalFromRemoteHost();
 
-        Map<String, Expectation> expectationMap = new HashMap<>(allMockRuleMap.size());
-        for (Map.Entry<String, Map<String, String>> stringMapEntry : allMockRuleMap.entrySet()) {
-            String mockMatchKey = MockBaseManager.getMockExternalKey(MockBaseManager.getUserIdFromMockKey(stringMapEntry.getKey()));
-            Map<String, String> mockExternalMap = allMockExternalMap.get(mockMatchKey);
-
-            for (Map.Entry<String, String> stringStringEntry : stringMapEntry.getValue().entrySet()) {
-                Expectation expectation = getExpectationSerializer().deserialize(stringStringEntry.getValue());
-                if (Objects.nonNull(mockExternalMap) && mockExternalMap.containsKey(stringStringEntry.getKey())) {
-                    expectation = processExpectation(expectation, mockExternalMap.get(stringStringEntry.getKey()));
-                }
-                expectationMap.put(stringStringEntry.getKey(), expectation);
-            }
-        }
+        Map<String, Expectation> allExpectationMap = allMockRuleMap.entrySet().stream().
+            collect(Collectors.toMap(
+                Map.Entry::getKey,
+                stringMapEntry -> getExpectationSerializer().deserialize(stringMapEntry.getValue())
+            ));
 
         requestMatchers.reset();
-        expectationMap.entrySet().stream().
-            sorted(Comparator.comparingInt(e -> Integer.parseInt(e.getKey()))).
+        allExpectationMap.entrySet().stream().
+            sorted(Comparator.comparingInt(e -> MockBaseManager.getExpectationId(e.getKey()))).
             forEach(e -> requestMatchers.add(e.getValue(), MockServerMatcherNotifier.Cause.API));
     }
 
     /**
-     * 根据userId查询MOCK.UPDATE的key,有数据则表示在这个请求之前用户有更新了规则,需要将这些规则和requestMatchers中做同步
+     * 查询MOCK.UPDATE,有数据则表示在这个请求之前有用户更新了规则,需要将这些规则和requestMatchers中做同步
      * @param request
      */
     private void updateExpectationFromCache(HttpRequest request) {
@@ -318,55 +309,6 @@ public class HttpState {
 
         }
         MockRedisManager.removeMockUpdateKey(userId);
-    }
-
-    /**
-     * 对规则进行额外处理
-     * @param expectation
-     * @param externalExpectationString
-     * @return
-     */
-    private Expectation processExpectation(Expectation expectation, String externalExpectationString) {
-        if (Objects.isNull(expectation) || Objects.isNull(expectation.getHttpRequest())
-            || !(expectation.getHttpRequest() instanceof HttpRequest)
-            || StringUtils.isBlank(externalExpectationString)) {
-            return expectation;
-        }
-
-        ExternalExpectation externalExpectation = JsonConvertUtil.toObject(externalExpectationString,
-            ExternalExpectation.class);
-        if (externalExpectation.hasExternal()) {
-            ExpectationDTO expectationDTO = new ExpectationDTO(expectation);
-            HttpRequestDTO httpRequestDTO = ObjectConvertUtil.convert(expectationDTO.getHttpRequest(),
-                HttpRequestDTO.class);
-
-            if (externalExpectation.hasKeyMatchStyle()) {
-                processKeyMatchStyle(httpRequestDTO, externalExpectation.getKeyMatchStyle());
-            }
-            return expectationDTO.buildObject();
-        }
-        return expectation;
-    }
-
-    /**
-     * 处理queryStringParameters、pathParameters、headers中的keyMatchStyle
-     * @param httpRequestDTO
-     * @param keyMatchStyle
-     * @return
-     */
-    private void processKeyMatchStyle(HttpRequestDTO httpRequestDTO, ExternalKeyMatchStyle keyMatchStyle) {
-        Parameters queryStringParameters = httpRequestDTO.getQueryStringParameters();
-        if (Objects.nonNull(queryStringParameters) && keyMatchStyle.getQueryStringParameters()) {
-            queryStringParameters.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
-        }
-        Parameters pathParameters = httpRequestDTO.getPathParameters();
-        if (Objects.nonNull(pathParameters) && keyMatchStyle.getPathParameters()) {
-            pathParameters.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
-        }
-        Headers headers = httpRequestDTO.getHeaders();
-        if (Objects.nonNull(headers) && keyMatchStyle.getHeaders()) {
-            headers.withKeyMatchStyle(KeyMatchStyle.MATCHING_KEY);
-        }
     }
 
     /**
