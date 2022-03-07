@@ -71,7 +71,8 @@
         <xmlunit.version>2.9.0</xmlunit.version>
 
         <!-- mockserver-plus源码改动 zhoubh -->
-        <mockserverplus.version>1.0</mockserverplus.version>
+        <msp.core.version>1.0</msp.core.version>
+        <msp.model.version>1.0</msp.model.version>
         <!-- mockserver-plus源码改动 zhoubh -->
 
         <skipTests>false</skipTests>
@@ -102,7 +103,12 @@
             <dependency>
                 <groupId>com.zhoubh</groupId>
                 <artifactId>mockserver-plus-core</artifactId>
-                <version>${mockserverplus.version}</version>
+                <version>${msp.core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.zhoubh</groupId>
+                <artifactId>mockserver-plus-model</artifactId>
+                <version>${msp.model.version}</version>
             </dependency>
             <!-- mockserver-plus源码改动 zhoubh -->
 
