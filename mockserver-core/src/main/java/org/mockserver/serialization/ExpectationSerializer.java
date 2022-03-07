@@ -116,8 +116,12 @@ public class ExpectationSerializer implements Serializer<Expectation> {
                     OPEN_API_SPECIFICATION_URL
             );
         } else {
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+            /**
             String validationErrors = getValidator().isValid(jsonExpectation);
             if (validationErrors.isEmpty()) {
+             **/
+             /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
                 Expectation expectation = null;
                 try {
                     ExpectationDTO expectationDTO = objectMapper.readValue(jsonExpectation, ExpectationDTO.class);
@@ -135,9 +139,13 @@ public class ExpectationSerializer implements Serializer<Expectation> {
                     throw new IllegalArgumentException("exception while parsing [" + jsonExpectation + "] for Expectation", throwable);
                 }
                 return expectation;
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
+            /**
             } else {
                 throw new IllegalArgumentException(StringUtils.removeEndIgnoreCase(formatLogMessage("incorrect expectation json format for:{}schema validation errors:{}", jsonExpectation, validationErrors), "\n"));
             }
+             **/
+            /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
         }
     }
 
