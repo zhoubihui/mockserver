@@ -1,22 +1,15 @@
 package org.mockserver.mock;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.zhoubh.core.util.JsonConvertUtil;
-import com.zhoubh.core.util.ObjectConvertUtil;
 import com.zhoubh.mock.manager.MockBaseManager;
-import com.zhoubh.mock.manager.MockHandlerManager;
 import com.zhoubh.mock.manager.MockRedisManager;
-import com.zhoubh.mock.model.ExternalExpectation;
-import com.zhoubh.mock.model.ExternalKeyMatchStyle;
 import com.zhoubh.mock.model.UpdateAction;
-import org.apache.commons.lang3.StringUtils;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.MockServerEventLog;
 import org.mockserver.log.model.LogEntry;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.memory.MemoryMonitoring;
-import org.mockserver.mock.listeners.MockServerMatcherNotifier;
 import org.mockserver.mock.listeners.MockServerMatcherNotifier.Cause;
 import org.mockserver.model.*;
 import org.mockserver.openapi.OpenAPIConverter;
@@ -26,8 +19,6 @@ import org.mockserver.responsewriter.ResponseWriter;
 import org.mockserver.scheduler.Scheduler;
 import org.mockserver.serialization.*;
 import org.mockserver.serialization.java.ExpectationToJavaSerializer;
-import org.mockserver.serialization.model.ExpectationDTO;
-import org.mockserver.serialization.model.HttpRequestDTO;
 import org.mockserver.server.initialize.ExpectationInitializerLoader;
 import org.mockserver.uuid.UUIDService;
 import org.mockserver.verify.Verification;
@@ -42,6 +33,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static com.zhoubh.mock.model.UpdateAction.*;
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -276,7 +268,7 @@ public class HttpState {
         requestMatchers.reset();
         allExpectationMap.entrySet().stream().
             sorted(Comparator.comparingInt(e -> MockBaseManager.getExpectationId(e.getKey()))).
-            forEach(e -> requestMatchers.add(e.getValue(), MockServerMatcherNotifier.Cause.API));
+            forEach(e -> requestMatchers.add(e.getValue(), Cause.API));
     }
 
     /**
@@ -284,31 +276,41 @@ public class HttpState {
      * @param request
      */
     private void updateExpectationFromCache(HttpRequest request) {
-        String userId = MockHandlerManager.getUserId(JsonConvertUtil.toJson(request));
-        Map<String, String> mockUpdateMap = MockRedisManager.getMockUpdateFromUserId(userId);
+        Map<String, String> mockUpdateMap = MockRedisManager.getMockUpdateMap();
         if (mockUpdateMap.isEmpty()) {
             return;
         }
-        for (Map.Entry<String, String> stringStringEntry : mockUpdateMap.entrySet()) {
-            switch (UpdateAction.valueOf(stringStringEntry.getValue())) {
-                case INSERT:
-                case UPDATE:
-                    String mockRule = MockRedisManager.getMockRuleWithId(userId, stringStringEntry.getKey());
-                    if (Objects.nonNull(mockRule)) {
-                        String externalExpectationString = MockRedisManager.getMockExternalWithId(userId,
-                            stringStringEntry.getKey());
-                        Expectation expectation = getExpectationSerializer().deserialize(mockRule);
-                        requestMatchers.add(processExpectation(expectation, externalExpectationString), Cause.API);
-                    }
-                    break;
-                case DELETE:
-                    String expectationId = MockBaseManager.getExpectationId(stringStringEntry.getKey(), userId);
-                    requestMatchers.removeExpectationWithId(expectationId);
-                    break;
-            }
 
+        /**
+         * 1、根据action提取出2个Map,因为INSERT和UPDATE操作是一样的,所以这两个可以放一起
+         * 2、根据action执行
+         *  注意: INSERT和UPDATE这里需要根据id来排序后再处理
+         * 3、移除MOCK.UPDATE key
+         */
+        Map<String, UpdateAction> mockUpdateActionMap = mockUpdateMap.entrySet().stream().
+            collect(Collectors.toMap(
+                Map.Entry::getKey,
+                stringStringEntry -> UpdateAction.valueOf(stringStringEntry.getValue())
+            ));
+        List<String> insertAndUpdateExpectationIds = mockUpdateActionMap.entrySet().stream().
+            filter(stringActionEntry -> stringActionEntry.getValue() == INSERT || stringActionEntry.getValue() == UPDATE).
+            map(Map.Entry::getKey).
+            sorted(Comparator.comparingInt(MockBaseManager::getExpectationId)).
+            collect(Collectors.toList());
+        String[] deleteExpectationIds = mockUpdateActionMap.entrySet().stream().
+            filter(stringActionEntry -> stringActionEntry.getValue() == DELETE).
+            map(Map.Entry::getKey).
+            toArray(String[]::new);
+        if (!insertAndUpdateExpectationIds.isEmpty()) {
+            List<String> expectations = MockRedisManager.getMockRuleMap(insertAndUpdateExpectationIds);
+            if (Objects.nonNull(expectations) && !expectations.isEmpty()) {
+                expectations.forEach(e -> requestMatchers.add(getExpectationSerializer().deserialize(e), Cause.API));
+            }
         }
-        MockRedisManager.removeMockUpdateKey(userId);
+        if (deleteExpectationIds.length > 0) {
+            requestMatchers.removeWithExpectationIds(deleteExpectationIds);
+        }
+        MockRedisManager.removeMockUpdateKey();
     }
 
     /**

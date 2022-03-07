@@ -103,14 +103,17 @@ public class RequestMatchers extends MockServerMatcherNotifier {
 
     /**
      * 根据expectationId移除规则
-     * @param expectationId
+     * @param expectationIds
      * @return
      */
-    public void removeExpectationWithId(String expectationId) {
-        if (Objects.nonNull(expectationId)) {
-            httpRequestMatchers.getByKey(expectationId).
-                ifPresent(httpRequestMatcher -> scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher,
-                    UUIDService.getUUID())));
+    public void removeWithExpectationIds(String... expectationIds) {
+        if (Objects.nonNull(expectationIds) && expectationIds.length > 0) {
+            Arrays.stream(expectationIds).
+                forEach(expectationId -> {
+                    httpRequestMatchers.getByKey(expectationId).
+                        ifPresent(httpRequestMatcher -> scheduler.submit(() -> removeHttpRequestMatcher(httpRequestMatcher,
+                            UUIDService.getUUID())));
+                });
         }
     }
 

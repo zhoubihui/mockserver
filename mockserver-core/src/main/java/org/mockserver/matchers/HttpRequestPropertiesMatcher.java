@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.base.Joiner;
 import com.zhoubh.core.util.JsonConvertUtil;
+import com.zhoubh.mock.manager.MockBaseManager;
 import com.zhoubh.mock.manager.MockHandlerManager;
 import org.apache.commons.lang3.StringUtils;
 import org.mockserver.codec.ExpandedParameterDecoder;
@@ -64,15 +65,12 @@ public class HttpRequestPropertiesMatcher extends AbstractHttpRequestMatcher {
     private RegexStringMatcher userMatcher = null;
 
     /**
-     * id的结构是: id.userId
+     * id的结构是: userId.id
      * @param id
      */
     private void withUser(String id) {
-        String[] ids = id.split("\\.");
-        if (ids.length < 2) {
-            return;
-        }
-        this.userMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(ids[1]), controlPlaneMatcher);
+        String userId = MockBaseManager.getUserId(id);
+        this.userMatcher = new RegexStringMatcher(mockServerLogger, NottableString.string(userId), controlPlaneMatcher);
     }
     /*-------------------- mockserver-plus源码改动 zhoubh --------------------------------------------------------*/
 
