@@ -259,23 +259,17 @@ public class HttpState {
             return;
         }
 
-        Map<String, Expectation> allExpectationMap = allMockRuleMap.entrySet().stream().
-            collect(Collectors.toMap(
-                Map.Entry::getKey,
-                stringMapEntry -> getExpectationSerializer().deserialize(stringMapEntry.getValue())
-            ));
-
         requestMatchers.reset();
-        allExpectationMap.entrySet().stream().
+        allMockRuleMap.entrySet().stream().
             sorted(Comparator.comparingInt(e -> MockBaseManager.getExpectationId(e.getKey()))).
-            forEach(e -> requestMatchers.add(e.getValue(), Cause.API));
+            map(stringStringEntry -> getExpectationSerializer().deserialize(stringStringEntry.getValue())).
+            forEach(e -> requestMatchers.add(e, Cause.API));
     }
 
     /**
      * 查询MOCK.UPDATE,有数据则表示在这个请求之前有用户更新了规则,需要将这些规则和requestMatchers中做同步
-     * @param request
      */
-    private void updateExpectationFromCache(HttpRequest request) {
+    private void updateExpectationFromCache() {
         Map<String, String> mockUpdateMap = MockRedisManager.getMockUpdateMap();
         if (mockUpdateMap.isEmpty()) {
             return;
@@ -319,7 +313,7 @@ public class HttpState {
      * @return
      */
     public Expectation firstMatchingExpectation(HttpRequest request) {
-        updateExpectationFromCache(request);
+        updateExpectationFromCache();
 
         if (requestMatchers.isEmpty()) {
             return null;
