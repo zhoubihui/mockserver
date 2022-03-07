@@ -21,6 +21,10 @@
             <groupId>com.zhoubh</groupId>
             <artifactId>mockserver-plus-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.zhoubh</groupId>
+            <artifactId>mockserver-plus-model</artifactId>
+        </dependency>
         <!-- mockserver-plus源码改动 zhoubh -->
 
         <!-- mockserver -->

@@ -3,7 +3,7 @@ package org.mockserver.mock;
 import com.google.common.annotations.VisibleForTesting;
 import com.zhoubh.mock.manager.MockBaseManager;
 import com.zhoubh.mock.manager.MockRedisManager;
-import com.zhoubh.mock.model.UpdateAction;
+import com.zhoubh.model.mock.UpdateAction;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.ConfigurationProperties;
 import org.mockserver.log.MockServerEventLog;
@@ -33,7 +33,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static com.zhoubh.mock.model.UpdateAction.*;
+import static com.zhoubh.model.mock.UpdateAction.*;
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static java.nio.charset.StandardCharsets.UTF_8;
