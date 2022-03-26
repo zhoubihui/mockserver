@@ -2,7 +2,7 @@ package org.mockserver.mock;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.zhoubh.mock.manager.MockBaseManager;
-import com.zhoubh.mock.manager.MockRedisManager;
+import com.zhoubh.model.manager.MockCacheManager;
 import com.zhoubh.model.mock.UpdateAction;
 import org.mockserver.closurecallback.websocketregistry.WebSocketClientRegistry;
 import org.mockserver.configuration.ConfigurationProperties;
@@ -254,7 +254,7 @@ public class HttpState {
      * 3、装载规则到requestMatchers中
      */
     private void initExpectationFromCache() {
-        Map<String, String> allMockRuleMap = MockRedisManager.getMockRuleMap();
+        Map<String, String> allMockRuleMap = MockCacheManager.getMockRuleMap();
         if (allMockRuleMap.isEmpty()) {
             return;
         }
@@ -270,7 +270,7 @@ public class HttpState {
      * 查询MOCK.UPDATE,有数据则表示在这个请求之前有用户更新了规则,需要将这些规则和requestMatchers中做同步
      */
     private void updateExpectationFromCache() {
-        Map<String, String> mockUpdateMap = MockRedisManager.getMockUpdateMap();
+        Map<String, String> mockUpdateMap = MockCacheManager.getMockUpdateMap();
         if (mockUpdateMap.isEmpty()) {
             return;
         }
@@ -296,7 +296,7 @@ public class HttpState {
             map(Map.Entry::getKey).
             toArray(String[]::new);
         if (!insertAndUpdateExpectationIds.isEmpty()) {
-            List<String> expectations = MockRedisManager.getMockRuleMap(insertAndUpdateExpectationIds);
+            List<String> expectations = MockCacheManager.getMockRuleMap(insertAndUpdateExpectationIds);
             if (Objects.nonNull(expectations) && !expectations.isEmpty()) {
                 expectations.forEach(e -> requestMatchers.add(getExpectationSerializer().deserialize(e), Cause.API));
             }
@@ -304,7 +304,7 @@ public class HttpState {
         if (deleteExpectationIds.length > 0) {
             requestMatchers.removeWithExpectationIds(deleteExpectationIds);
         }
-        MockRedisManager.removeMockUpdateKey();
+        MockCacheManager.removeMockUpdateKey();
     }
 
     /**
